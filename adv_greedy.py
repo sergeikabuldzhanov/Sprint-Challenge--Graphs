@@ -14,16 +14,16 @@ world = World()
 # You may uncomment the smaller graphs for development and testing purposes.
 # map_file = "maps/test_line.txt"
 # map_file = "maps/test_cross.txt"
-# map_file = "maps/test_loop.txt"
+map_file = "maps/test_loop.txt"
 # map_file = "maps/test_loop_fork.txt"
-map_file = "maps/main_maze.txt"
+# map_file = "maps/main_maze.txt"
 
 # Loads the map into a dictionary
 room_graph = literal_eval(open(map_file, "r").read())
 world.load_graph(room_graph)
 
 # Print an ASCII map
-# world.print_rooms()
+world.print_rooms()
 
 player = Player(world.starting_room)
 
@@ -32,6 +32,12 @@ player = Player(world.starting_room)
 traversal_path = []
 directions_map = {'n': 's', 's': 'n', 'w': 'e', 'e': 'w'}
 
+def longest_stride(room, direction):
+    stride = 0
+    while room.get_room_in_direction(direction) is not None:
+        stride+=1
+        room = room.get_room_in_direction(direction)
+    return stride, direction
 visited = {}
 current_room = world.starting_room
 room_stack = deque()
@@ -52,7 +58,9 @@ while len(visited) < len(world.rooms):
                  if visited[current_room.id][direction] == None]
     if len(unvisited):
         room_stack.append(current_room)
-        move_direction = unvisited[0]
+        move_direction = max([longest_stride(current_room, direction) for direction in unvisited])[1]
+
+
         # move_direction = random.choice(unvisited)
         next_room = current_room.get_room_in_direction(move_direction)
         visited[current_room.id][move_direction] = next_room.id
@@ -71,126 +79,109 @@ while len(visited) < len(world.rooms):
         traversal_path.append(direction)
         room_id_path.append(current_room.id)
 
+# transform graph into an array of arrays for simplicity sake
 graph = [[value for value in v.values() if value is not None]
          for k, v in sorted(visited.items(), key=lambda x: x[0])]
 
 
-def find_depth(graph , node, visited_before = set()):
-    """
-    Polls the depth of the node and finds the longest path
-
-    """
-    queue = deque([([node], visited_before.copy())])
-    max_path = [node]
-    # find the max length
-    while queue:
-        current_path, current_visited = queue.popleft()
-        # print(len(current_path), len(current_visited))
-        current_node = current_path[-1]
-        if len(current_path) > len(max_path):
-            max_path = current_path
-        for n in graph[current_node]:
-            if n not in current_visited:
-                new_visited = current_visited.copy()
-                new_visited.add(n)
-                new_path = current_path + [n]
-                queue.append((new_path, new_visited))
-    # figure if the path is a cycle, if it is, prioritise it
-    isCycle = False
-    # if we hit a node previously visited by the main path, we are in a cycle.
-    for n in graph[max_path[-1]]:
-        if n in visited_before:
-            isCycle = True
-    return max_path, node, isCycle
-
-# print(find_depth( graph, 5, set([0,5])))
-
-def bfs_closest_unvisited(graph, starting_vertex, visited_before = set()):
+def bfs(starting_vertex, destination_vertex):
     """
     Return a list containing the shortest path from
-    starting_vertex the closest visited node with unvisited neighbors.
+    starting_vertex to destination_vertex in
+    breath-first order.
     """
     visited = set()
     visited.add(starting_vertex)
     paths = deque()
     paths.appendleft([starting_vertex])
+    # print(starting_vertex)
     # store a queue of paths
     while len(paths):
         path = paths.pop()
-        # print(path)
         node = path[-1]
-        # look at the current node
-        # if it has been visited before, and has neighbors which have not been visited before
-        # return path to that node
-        if node in visited_before:
-            neighbors_unvisited_by_main_path = [n for n in graph[node] if n not in visited_before]
-            if len(neighbors_unvisited_by_main_path):
-                # print(path)
-                return path
-        # else, continue bfs
-        for adjacent in graph[node]:
-            if adjacent not in visited:
-                visited.add(node)
-                new_path = path+[adjacent]
-                paths.appendleft(new_path)
-
-# print(bfs_closest_unvisited(graph, 0, set([0,1,3,5,7])))
-
-def find_path(graph, starting_room):
-    """
-    Finds an approximate shortest path that visits
-    all nodes in a graph, using the 'shallowest depth subgraph' heuristic.
-    """
-    # start with the given room, mark it as visited and add to the path
-    # to attain the shortest path between all nodes, we need to minimise backtracking
-    # if no backtracking was needed, a simple dfs would do the job.
-    # the way to minimise backtracking seems to be to take the shortest paths first
-    # you can see it in the test_loop.txt and test_loop_fork.txt maps.
-    # thus, before every move we take, we need to test the maximum 'depth' of all the potential
-    # paths we can take, without hitting an already visited node
-    # and take the direction of the minimum 'depth' path.
-    current_node = starting_room
-    visited = set()
-    path = []
-    while len(visited)<len(graph):
-        # print(current_node)
-        path.append(current_node)
-        # do a DFS while using depth polling to decide where to go next
-        if current_node not in visited:
-            visited.add(current_node)
-        # get all the unvisited neighbors
-        unvisited_neighbors = [n for n in graph[current_node]if n not in visited]
-        # print(unvisited_neighbors)1
-        # if it has any, poll them for depth and choose the shallowest as the next node in the path
-        if unvisited_neighbors:
-            shortest_path,current_node, isCycle = min([find_depth(graph, n, visited) for n in unvisited_neighbors], key=lambda x: len(x[0]))
-            # print(shortest_path,current_node)
-        # if there are no unvisited neighbors, we either hit a dead end
-        # or we hit a previously visited part of the path. Which means there's a cycle in the graph
-        # it means that now we have to backtrack until we find a node with unvisited neighbors.
-        # for naive implementation, we could use a stack to store our path, and fill in the backtracking parts
-        # but it would miss some of the edge cases, like  having a closed off loop in a graph.
+        # if the path ends with destination vertex, that the path we need, bfs ensures it's the shortest
+        if node == destination_vertex:
+            return path
+        # else, look at all the neghbours, and add new paths to the queue
         else:
-            path_back = bfs_closest_unvisited(graph, current_node, visited)
-            if path_back:
-                path.extend(path_back[1:-1])
-                current_node = path_back[-1]
-        # print(len(path), len(visited))
-    return path, len(path)
-
-# print(find_path(graph, 0))
-def convert_id_path_to_directions(id_path, direction_graph):
-    direction_path = []
-    for i in range(len(id_path)-1):
-        current = id_path[i]
-        target = id_path[i+1]
-        direction = [direction for direction in direction_graph[current] if direction_graph[current][direction]==target]
-        direction_path.extend(direction)
-    return direction_path
+            for adjacent in graph[node]:
+                if adjacent not in visited:
+                    visited.add(node)
+                    new_path = path+[adjacent]
+                    paths.appendleft(new_path)
 
 
-# world.print_rooms()
-traversal_path = convert_id_path_to_directions(find_path(graph, 0)[0], visited)
+from math import inf
+
+def shortestPathLength(graph, starting_room):
+    nodeCount = len(graph)
+    
+    # NOTE
+    # We are using BFS here because it's better suited for 'shortest path'
+    # types of problems.
+
+    # Thoughts:
+    # 1. start the starting node, do BFS to try reaching all other nodes.
+    # 2. Must keep track of visited nodes, else infinite loop may happen.
+    # 3. But each node may have to be visited multiple times, as described in the problem
+    #    statement. So we cannot be too strict in limiting searches
+    # 4. We must describe the state during a search, we need:
+    #    - The current path we are on
+    #    - Nodes we have visited 
+
+    # each search is described by (currentPathHEAD, visited)
+    # same search does _not_ have to be repeated, since if re-visited with
+    # the same state, it would yield the same result.
+    # NOTE this does not prevent revisiting the same node again,
+    # it just prevents revisiting it with the same STATE!
+
+    # conceptually masks[k] indicates that only node k has been visited
+    masks = [frozenset([i]) for i in range(nodeCount)]
+    # used to check whether all nodes have been visited (11111...111)
+    allVisited = frozenset(range(nodeCount))
+    queue = deque([([starting_room], masks[starting_room])])
+    steps = 0
+
+    # encoded_visited in visited_states[node] iff
+    # (node, encoded_visited) has been pushed onto the queue
+    visited_states = [{masks[i]} for i in range(nodeCount)]
+    # states in visited_states will never be pushed onto queue again
+
+    while queue:
+        # number of nodes to be popped off for current steps size
+        # this avoids having to store steps along with the state
+        # which consumes both time and memory
+        count = len(queue)
+
+        while count:
+            current_path, visited = queue.popleft()
+            currentNode = current_path[-1]
+            if visited == allVisited:
+                return steps, current_path
+
+            # start bfs from each neighbor
+            for nb in graph[currentNode]:
+                new_visited = visited | masks[nb]
+                new_path = current_path+[nb]
+                # pre-check here to for efficiency, as each steps increment may results
+                # in huge # of nodes being added into queue
+                if new_visited == allVisited:
+                    return steps + 1, new_path
+                if new_visited not in visited_states[nb]:
+                    visited_states[nb].add(new_visited)
+                    queue.append((new_path, new_visited))
+
+            count -= 1
+        steps += 1
+    # no path which explores every node
+    return inf
+
+
+print(shortestPathLength(graph, 0))
+# shortest_paths = [[bfs(starting_node, target_node)
+#                    for target_node in range(len(graph))]for starting_node in range(len(graph))]
+# print(shortest_paths)
+
 # print(room_id_path)
 # print(traversal_path)
 # TRAVERSAL TEST
@@ -223,23 +214,6 @@ while True:
         print("I did not understand that command.")
 """
 """
-#####
-#                                        #
-#      017       002       014           #
-#       |         |         |            #
-#       |         |         |            #
-#      016--015--001--012--013           #
-#                 |                      #
-#                 |                      #
-#      008--007--000--003--004           #
-#       |         |                      #
-#       |         |                      #
-#      009       005                     #
-#       |         |                      #
-#       |         |                      #
-#      010--011--006--018                #
-#                                        #
-
 #####
 #                                                                                                                                                           #
 #                                                        434       497--366--361  334--384--435  476                                                        #
